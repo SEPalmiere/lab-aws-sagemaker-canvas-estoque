@@ -47,76 +47,132 @@ Antes de começar, certifique-se de ter uma conta na AWS. Se precisar de ajuda p
 Esperamos que esta experiência tenha sido enriquecedora e que você tenha aprendido mais sobre Machine Learning aplicado a problemas reais. Se tiver alguma dúvida, não hesite em abrir uma issue neste repositório ou entrar em contato com a equipe da DIO.
 
 
+Projeto: Otimização de Estoque com AWS SageMaker Canvas
+Visão Geral
+Este projeto demonstra como utilizar o AWS SageMaker Canvas, uma ferramenta de Machine Learning de baixo código, para desenvolver um sistema inteligente de previsão de estoque. Nosso objetivo é criar um modelo preditivo que antecipe a demanda futura de produtos, baseando-se em dados históricos de vendas e variáveis contextuais relevantes.
+Requisitos
 
-Projeto: Previsão de Estoque Inteligente na AWS com SageMaker Canvas
-Introdução
+Conta ativa na AWS
+Compreensão básica de conceitos de Machine Learning
+Familiaridade com Python e Pandas (recomendado)
 
-Neste projeto, utilizaremos o SageMaker Canvas, um serviço de Machine Learning de baixo código da AWS, para criar um modelo de previsão de estoque. Este modelo nos ajudará a prever a demanda futura de produtos com base em dados históricos de vendas e outros fatores relevantes.
-Pré-requisitos
+1. Configuração do Ambiente SageMaker
 
-    Conta da AWS
-    Conhecimento básico de Machine Learning
-    Experiência com o SageMaker Canvas (opcional)
-
-Passos
-1. Criar um notebook do SageMaker
-
+import boto3
 import sagemaker
-from sagemaker.canvas import *
+from sagemaker import get_execution_role
 
-2. Importar as bibliotecas necessárias
+role = get_execution_role()
+session = sagemaker.Session()
+
+# Configurar o bucket S3 para armazenamento de dados
+bucket = session.default_bucket()
+prefix = 'sagemaker/previsao-estoque'
+
+2. Preparação e Análise de Dados
 
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.preprocessing import StandardScaler
 
-3. Carregar os dados
+# Carregar dados (substitua 'seu_arquivo.csv' pelo nome real do seu arquivo)
+df = pd.read_csv('seu_arquivo.csv')
 
-Carregue os dados de vendas históricos em um DataFrame do Pandas. Certifique-se de que os dados contenham as seguintes colunas:
+# Visualização inicial dos dados
+print(df.head())
+print(df.describe())
 
-    product_id
-    sales_date
-    sales_quantity
+# Análise gráfica das vendas ao longo do tempo
+plt.figure(figsize=(12,6))
+plt.plot(df['sales_date'], df['sales_quantity'])
+plt.title('Histórico de Vendas')
+plt.xlabel('Data')
+plt.ylabel('Quantidade Vendida')
+plt.show()
 
-4. Explorar os dados
+3. Pré-processamento dos Dados
 
-df.head()
-df.describe()
-df.plot(x='sales_date', y='sales_quantity')
+# Converter 'sales_date' para datetime
+df['sales_date'] = pd.to_datetime(df['sales_date'])
 
-5. Criar o modelo de previsão
-Dividir os dados em conjuntos de treinamento e teste
+# Extrair características temporais
+df['day_of_week'] = df['sales_date'].dt.dayofweek
+df['month'] = df['sales_date'].dt.month
+df['year'] = df['sales_date'].dt.year
 
-X_train, X_test, y_train, y_test = train_test_split(df[['sales_date']], df['sales_quantity'], test_size=0.2, random_state=42)
+# Selecionar features para o modelo
+features = ['day_of_week', 'month', 'year']
+X = df[features]
+y = df['sales_quantity']
 
-Criar e treinar o modelo de regressão linear
+# Dividir dados em treino e teste
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-model = LinearRegression()
-model.fit(X_train, y_train)
+# Normalizar os dados
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
-6. Avaliar o modelo
-Fazer previsões nos dados de teste
+4. Treinamento do Modelo com SageMaker Canvas
+No SageMaker Canvas, siga estes passos:
 
-y_pred = model.predict(X_test)
+Importe seus dados pré-processados.
+Selecione 'sales_quantity' como a coluna alvo.
+Escolha o tipo de modelo (por exemplo, regressão para previsão de quantidades).
+Inicie o treinamento do modelo.
 
-Calcular as métricas de avaliação
+5. Avaliação do Modelo
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
-mse = mean_squared_error(y_test, y_pred)
-mae = mean_absolute_error(y_test, y_pred)
+# Assumindo que 'predictions' são as previsões do seu modelo Canvas
+mse = mean_squared_error(y_test, predictions)
+mae = mean_absolute_error(y_test, predictions)
+r2 = r2_score(y_test, predictions)
 
-print('MSE:', mse)
-print('MAE:', mae)
+print(f'Erro Quadrático Médio: {mse}')
+print(f'Erro Absoluto Médio: {mae}')
+print(f'R² Score: {r2}')
 
-7. Implantar o modelo
-Criar um endpoint do SageMaker
+6.  Implementação do Modelo
+from sagemaker.model import Model
+from sagemaker.serializers import CSVSerializer
+from sagemaker.deserializers import JSONDeserializer
 
-endpoint_name = 'previsao-estoque'
-role = sagemaker.get_execution_role()
+# Criar um modelo SageMaker a partir do modelo Canvas
+model_data = f's3://{bucket}/{prefix}/model.tar.gz'
+model = Model(model_data=model_data, role=role, sagemaker_session=session)
 
-endpoint = sagemaker.Endpoint(endpoint_name, role, 'linear-learner')
-endpoint.deploy(model, initial_instance_count=1)
+# Configurar o endpoint
+predictor = model.deploy(
+    initial_instance_count=1,
+    instance_type='ml.t2.medium',
+    serializer=CSVSerializer(),
+    deserializer=JSONDeserializer()
+)
 
-Conclusão
+7.  Utilização do Modelo para Previsões
+# Preparar dados para previsão
+new_data = pd.DataFrame({
+    'day_of_week': [3],
+    'month': [7],
+    'year': [2024]
+})
 
-Neste projeto, criamos um modelo de previsão de estoque usando o SageMaker Canvas. Este modelo pode ser usado para prever a demanda futura de produtos com base em dados históricos de vendas e outros fatores relevantes. Isso pode ajudar as empresas a otimizar seus níveis de estoque e reduzir custos.
+# Normalizar os novos dados
+new_data_scaled = scaler.transform(new_data)
+
+# Fazer previsão
+prediction = predictor.predict(new_data_scaled.tolist())
+print(f'Previsão de vendas: {prediction}')
+
+8.  Conclusão
+
+Neste projeto, desenvolvemos um sistema avançado de previsão de estoque utilizando o AWS SageMaker Canvas. Através da análise de dados históricos de vendas e variáveis temporais, criamos um modelo capaz de prever com precisão a demanda futura de produtos.
+A implementação deste sistema oferece diversos benefícios:
+
+Otimização do gerenciamento de estoque
+Redução de custos operacionais
+Melhoria na satisfação do cliente através da disponibilidade adequada de produtos
+
+Este projeto demonstra como ferramentas de ML de baixo código, como o SageMaker Canvas, podem ser utilizadas para resolver problemas complexos de negócios de forma eficiente e escalável. À medida que continuamos a refinar e adaptar o modelo, podemos esperar melhorias contínuas na precisão das previsões e, consequentemente, na eficiência operacional da empresa.
